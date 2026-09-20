@@ -7,7 +7,7 @@ alwaysApply: true
 
 Use `.cursor/skills/vtc-cli/SKILL.md`.
 
-- Binary: `vtc` (or `.venv/bin/vtc`)
+- Binary: `"/Users/ouqixi/vtc cli/.venv/bin/vtc"`
 - Moodle requires `--site ay2526` or `--site ay2627`; MyPortal has no `--site`
 - Do not run `vtc login` from this chat
 - Do not run `vtc myportal apply` or `vtc myportal select`
@@ -16,3 +16,4 @@ Use `.cursor/skills/vtc-cli/SKILL.md`.
 - Read-only MyPortal: `status`, `timetable`, `activities`, `modules`, `transcript`, `tuition`
 - Missing data is `unverified`, not "no homework"
 - Do not paste full lecture PDF/Word/PPT, transcript, or tuition text into chat; use excerpts
+- If there is no session, ask for a local Terminal login. Do not install on a remote box, copy session files, or use a proxy browser as a fallback.

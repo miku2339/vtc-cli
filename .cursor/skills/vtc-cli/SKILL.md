@@ -5,7 +5,10 @@ description: Read-only VTC Moodle and MyPortal CLI for courses, files, timetable
 
 # VTC CLI
 
-Canonical binary: `vtc` (or `.venv/bin/vtc` if the virtualenv is not activated)
+Canonical binary: `"/Users/ouqixi/vtc cli/.venv/bin/vtc"`
+Repo: `/Users/ouqixi/vtc cli`
+
+Prefer the absolute path. A missing `vtc` on PATH is not a reason to use a remote box.
 
 ## Hard rules
 
@@ -19,23 +22,23 @@ Canonical binary: `vtc` (or `.venv/bin/vtc` if the virtualenv is not activated)
 ## Agent-safe Moodle commands
 
 ```bash
-vtc moodle status --site ay2627 --json
-vtc moodle courses --site ay2627 --json
-vtc moodle assignments --site ay2627 --course COURSE_CODE --json
-vtc moodle sync --site ay2627 --course COURSE_CODE --output ./COURSE_CODE --json
-vtc moodle extract --path ./COURSE_CODE/lecture.pdf --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" moodle status --site ay2627 --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" moodle courses --site ay2627 --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" moodle assignments --site ay2627 --course COURSE_CODE --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" moodle sync --site ay2627 --course COURSE_CODE --output ./COURSE_CODE --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" moodle extract --path ./COURSE_CODE/lecture.pdf --json
 ```
 
 ## Agent-safe MyPortal commands
 
 ```bash
-vtc myportal status --json
-vtc myportal timetable --json
-vtc myportal timetable --today --json
-vtc myportal activities --json
-vtc myportal modules --json
-vtc myportal transcript --json
-vtc myportal tuition --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal status --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal timetable --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal timetable --today --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal activities --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal modules --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal transcript --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal tuition --json
 ```
 
 Return names, times, filenames, `source`, and `captured_at`. Prefer excerpt/`key_lines`.
@@ -43,16 +46,16 @@ Return names, times, filenames, `source`, and `captured_at`. Prefer excerpt/`key
 ## Login (human Terminal only)
 
 ```bash
-vtc login moodle --site ay2526
-vtc login moodle --site ay2627 --store-password
-vtc login myportal --store-password
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" login moodle --site ay2526
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" login moodle --site ay2627 --store-password
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" login myportal --store-password
 ```
 
 Writes that change records are also Terminal-only:
 
 ```bash
-vtc myportal apply --id <id> --confirm --json
-vtc myportal select --code COURSE_CODE --confirm --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal apply --id <id> --confirm --json
+"/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal select --code COURSE_CODE --confirm --json
 ```
 
-If a command returns missing session, ask the student to log in locally. Do not retry with env passwords from chat.
+If a command returns missing session, ask the student to log in locally. Do not retry with env passwords from chat. Do not install this CLI on a remote box, copy `*.storage.json`, or use a proxy browser as a Moodle/MyPortal fallback.
