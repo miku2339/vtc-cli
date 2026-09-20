@@ -16,4 +16,5 @@ Use `.cursor/skills/vtc-cli/SKILL.md`.
 - Read-only MyPortal: `status`, `timetable`, `activities`, `modules`, `transcript`, `tuition`
 - Missing data is `unverified`, not "no homework"
 - Do not paste full lecture PDF/Word/PPT, transcript, or tuition text into chat; use excerpts
-- If there is no session, ask for a local Terminal login. Do not install on a remote box, copy session files, or use a proxy browser as a fallback.
+- If there is no session, ask for a local Terminal login. Do not copy session files to Grok Bot's cloud computer or use a proxy browser as a fallback.
+- Grok Bot is not this Mac: it uses its own Linux VM. See `GROKBOT.md`. This Cursor chat uses the Mac binary above.

@@ -58,4 +58,4 @@ Writes that change records are also Terminal-only:
 "/Users/ouqixi/vtc cli/.venv/bin/vtc" myportal select --code COURSE_CODE --confirm --json
 ```
 
-If a command returns missing session, ask the student to log in locally. Do not retry with env passwords from chat. Do not install this CLI on a remote box, copy `*.storage.json`, or use a proxy browser as a Moodle/MyPortal fallback.
+If a command returns missing session, ask the student to log in locally. Do not retry with env passwords from chat. Do not copy `*.storage.json` onto Grok Bot's cloud computer, and do not use a proxy browser as a Moodle/MyPortal fallback. Grok Bot install/login lives in `GROKBOT.md`.
