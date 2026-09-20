@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vtc-cli"
+version = "0.2.0"
+description = "Read-only VTC Moodle and MyPortal CLI. Login stays on the local terminal; the agent never receives passwords."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "miku233333" }]
+urls = { Homepage = "https://github.com/miku233333/vtc-cli", Repository = "https://github.com/miku233333/vtc-cli" }
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "httpx>=0.27",
+    "keyring>=25.0",
+    "lxml>=5.0",
+    "playwright>=1.49",
+    "pypdf>=5.0",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "pyotp>=2.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+vtc = "vtc.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

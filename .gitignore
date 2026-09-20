@@ -1,0 +1,26 @@
+.venv/
+venv/
+.DS_Store
+*.extracted.txt
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Playwright / local session material — treat as secrets
+*.storage.json
+*.session.json
+.vtc-sync.json
+
+# Local dumps
+*.png
+*.webm
+.env
+.env.*
+!/.env.example

@@ -1,0 +1,18 @@
+---
+description: VTC Moodle and MyPortal CLI — agents never login or handle passwords; read-only vtc commands only
+alwaysApply: true
+---
+
+# VTC CLI
+
+Use `.cursor/skills/vtc-cli/SKILL.md`.
+
+- Binary: `vtc` (or `.venv/bin/vtc`)
+- Moodle requires `--site ay2526` or `--site ay2627`; MyPortal has no `--site`
+- Do not run `vtc login` from this chat
+- Do not run `vtc myportal apply` or `vtc myportal select`
+- Do not print passwords, TOTP, cookies, tokens, or `*.storage.json`
+- Read-only Moodle: `status`, `courses`, `assignments`, `sync`, `extract`
+- Read-only MyPortal: `status`, `timetable`, `activities`, `modules`, `transcript`, `tuition`
+- Missing data is `unverified`, not "no homework"
+- Do not paste full lecture PDF/Word/PPT, transcript, or tuition text into chat; use excerpts
