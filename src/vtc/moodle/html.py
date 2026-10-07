@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections import Counter
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -9,7 +10,7 @@ from urllib.parse import unquote, urlparse
 from bs4 import BeautifulSoup
 
 COURSE_CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2,}\d{4}[A-Z]?)(?![A-Z0-9])")
-SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._ -]+")
+UNSAFE_FILENAME_CHARS = frozenset('<>:"/\\|?*')
 SESSION_EXPIRED_MARKERS = (
     "log in to the site",
     "name=\"username\"",
@@ -40,6 +41,20 @@ def looks_like_login_page(html_text: str, url: str | None = None) -> bool:
     if url and "/login/" in url.lower():
         return True
     return any(marker in text for marker in SESSION_EXPIRED_MARKERS)
+
+
+def looks_like_authenticated_page(html_text: str) -> bool:
+    if "logout.php" in (html_text or "").lower():
+        return True
+    body = BeautifulSoup(html_text or "", "html.parser").body
+    return body is not None and "loggedin" in (body.get("class") or [])
+
+
+def looks_like_html_document(content_type: str, body: bytes) -> bool:
+    if "text/html" in (content_type or "").lower():
+        return True
+    prefix = body[:512].lstrip().lower()
+    return prefix.startswith((b"<!doctype html", b"<html"))
 
 
 def extract_sesskey(html_text: str) -> str | None:
@@ -220,9 +235,13 @@ def pluginfile_links(html_text: str) -> list[dict[str, str]]:
 
 
 def safe_filename(value: str) -> str:
-    cleaned = SAFE_FILENAME_RE.sub("_", value.strip())
-    cleaned = cleaned.strip(" ._")
-    return cleaned or "moodle_file"
+    name = value.strip().replace("\\", "/").rsplit("/", 1)[-1]
+    normalized = unicodedata.normalize("NFC", name)
+    cleaned = "".join(
+        "_" if char in UNSAFE_FILENAME_CHARS or unicodedata.category(char).startswith("C") else char
+        for char in normalized
+    ).strip(" .")
+    return cleaned if cleaned not in {"", ".", ".."} else "moodle_file"
 
 
 def filename_from_headers(content_disposition: str | None, url: str, fallback: str) -> str:

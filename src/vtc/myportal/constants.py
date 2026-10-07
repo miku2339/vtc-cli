@@ -2,25 +2,22 @@ from __future__ import annotations
 
 MYPORTAL_URL = "https://myportal.vtc.edu.hk/wps/portal"
 MYPORTAL_HOME = "https://myportal.vtc.edu.hk/wps/myportal/sp/"
-DOCUMENT_DOWNLOAD_URL = "https://swsdownload.vtc.edu.hk/swsdownload/"
-
 SECTION_PATHS: dict[str, tuple[str, ...]] = {
     "timetable": (
         "https://myportal.vtc.edu.hk/wps/myportal/sp/timetable/",
     ),
-    "activities": (
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/student_activity/",
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/activity/",
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/activity_enrolment/",
-    ),
-    "modules": (
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/module_selection/",
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/online_module_selection/",
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/oms/",
-    ),
+    "activities": (),
+    "modules": (),
+    "documents": (),
+}
+
+SECTION_URL_MARKERS: dict[str, tuple[str, ...]] = {
+    "timetable": ("/sp/timetable/",),
+    "activities": ("/sp/actstud/",),
+    "modules": ("/sp/omsstud/",),
     "documents": (
-        "https://myportal.vtc.edu.hk/wps/myportal/sp/document_download/",
-        DOCUMENT_DOWNLOAD_URL,
+        "/pa_stportalwebservice/tokengen",
+        "swsdownload.vtc.edu.hk/",
     ),
 }
 

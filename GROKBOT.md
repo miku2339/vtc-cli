@@ -25,11 +25,11 @@ python -m playwright install chromium
 
 3. Binary: `/workspace/vtc-cli/.venv/bin/vtc`
 
-Do not use `"/Users/ouqixi/vtc cli/.venv/bin/vtc"`. That path exists only on the Mac.
+Use the binary installed on the cloud computer. A local Mac checkout has a separate path and session.
 
 Local-computer execution on the Mac is a different, optional policy. Do not fall back to it for Moodle/MyPortal unless the student explicitly enabled it and approved the command.
 
-## Login (human takeover, not chat)
+## Login
 
 Default: the student opens **Agent Computer**, takes over, and runs login in that terminal. That writes a session file. After that, read-only `vtc` does **not** need `VTC_PASSWORD` or `VTC_TOTP_SECRET` in the shell.
 
@@ -39,6 +39,15 @@ Default: the student opens **Agent Computer**, takes over, and runs login in tha
 ```
 
 Need `ay2526` as well, run a second Moodle login with `--site ay2526`.
+
+The student may instead prepare a private `~/.config/vtc/credentials.md` on the cloud computer with `account`, `password` and optional `totp_secret` fields (Base32 or `otpauth://`). The agent may use that file without prompting:
+
+```bash
+/workspace/vtc-cli/.venv/bin/vtc login moodle --site ay2627 --credentials-file ~/.config/vtc/credentials.md --json
+/workspace/vtc-cli/.venv/bin/vtc login myportal --credentials-file ~/.config/vtc/credentials.md --json
+```
+
+Keep the file outside Git with mode `0600`. Do not copy Mac credentials or sessions to the cloud computer. Without a prepared file, interactive login remains human-only.
 
 - Do not type passwords, TOTP, or cookies into chat.
 - Do not run `vtc login` unattended if it would echo a secret into the transcript.
@@ -51,7 +60,7 @@ Need `ay2526` as well, run a second Moodle login with `--site ay2526`.
 `VTC_PASSWORD` / `VTC_TOTP_SECRET` in the cloud shell are **short-lived**. A computer update, new shell, or reboot wiping them is expected. Do not treat that as “the student must give the password again into standing VM env”.
 
 1. First check whether a session already exists: `moodle status` / `myportal status`. If `authenticated` is true, continue read-only. Do not ask for a password.
-2. If there is no session, ask the student to take over Agent Computer and run `vtc login` (option B). That is the preferred path.
+2. If there is no session, use a user-prepared private credential file on this VM, or ask the student to take over Agent Computer for interactive login.
 3. A Grok Bot secure prompt that injects env **only into that login process**, then unsets it, is allowed as a one-shot. Do not write secrets into `.bashrc`, systemd env, or a permanent cloud env store.
 4. Never ask the student to paste the password into chat, and never keep `VTC_PASSWORD` exported in the default shell.
 

@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from vtc.errors import MissingSession
+from vtc.errors import MissingSession, VtcError
 from vtc.moodle import html as moodle_html
 from vtc.moodle import rest as moodle_rest
 from vtc.moodle.session import http_client_from_storage
@@ -68,13 +69,60 @@ class MoodleClient:
             self._rest_ok = False
             return False
 
-    def _get(self, path: str) -> httpx.Response:
+    def _get(self, path: str, *, allow_file: bool = False) -> httpx.Response:
         response = self.http.get(self.site.url(path))
-        if moodle_html.looks_like_login_page(response.text, str(response.url)):
+        if response.is_error:
+            raise VtcError(
+                f"Moodle {self.site.key} returned HTTP {response.status_code}.",
+                status="unverified",
+            )
+        content_type = response.headers.get("content-type", "").lower()
+        is_html = moodle_html.looks_like_html_document(content_type, response.content)
+        html_text = response.text if is_html else ""
+        if moodle_html.looks_like_login_page(html_text, str(response.url)):
             raise MissingSession(
                 f"Moodle session for {self.site.key} expired. "
                 f"Run `vtc login moodle --site {self.site.key}` in a local terminal."
             )
+        response_url = urlsplit(str(response.url))
+        site_url = urlsplit(self.site.base_url)
+        if (response_url.scheme, response_url.netloc) != (site_url.scheme, site_url.netloc):
+            raise VtcError(
+                f"Moodle {self.site.key} redirected outside the expected site.",
+                status="unverified",
+            )
+        disposition = response.headers.get("content-disposition", "").lower()
+        is_file = allow_file and (
+            "pluginfile.php" in response_url.path
+            or "attachment" in disposition
+            or not is_html
+        )
+        if not is_file and not moodle_html.looks_like_authenticated_page(response.text):
+            raise VtcError(
+                f"Moodle {self.site.key} did not return an authenticated page.",
+                status="unverified",
+            )
+        return response
+
+    def get_file(self, url: str) -> httpx.Response:
+        parsed = urlsplit(url)
+        site = urlsplit(self.site.base_url)
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        is_webservice_file = (
+            parsed.scheme == site.scheme
+            and parsed.netloc == site.netloc
+            and (
+                parsed.path == "/webservice/pluginfile.php"
+                or parsed.path.startswith("/webservice/pluginfile.php/")
+            )
+        )
+        if is_webservice_file and self._wstoken and not any(key.lower() == "token" for key, _ in query):
+            query.append(("token", self._wstoken))
+        elif (parsed.scheme, parsed.netloc) != (site.scheme, site.netloc):
+            query = [(key, value) for key, value in query if key.lower() != "token"]
+        request_url = urlunsplit(parsed._replace(query=urlencode(query, doseq=True)))
+        response = self.http.get(request_url, follow_redirects=True)
+        response.raise_for_status()
         return response
 
     def courses(self) -> tuple[str, list[dict[str, Any]]]:
@@ -186,12 +234,7 @@ class MoodleClient:
             parsed["course_code"] = course.get("code") or parsed.get("course_code")
             parsed["raw_title"] = course.get("title")
             return "moodle_rest", parsed
-        response = self.http.get(course["url"])
-        if moodle_html.looks_like_login_page(response.text, str(response.url)):
-            raise MissingSession(
-                f"Moodle session for {self.site.key} expired. "
-                f"Run `vtc login moodle --site {self.site.key}` in a local terminal."
-            )
+        response = self._get(course["url"])
         parsed = moodle_html.parse_course_page(response.text, course["url"])
         return "moodle_html", parsed
 
@@ -217,7 +260,7 @@ class MoodleClient:
             for activity in parsed.get("activities") or []:
                 if activity.get("modtype") != "assign" or not activity.get("url"):
                     continue
-                response = self.http.get(activity["url"])
+                response = self._get(activity["url"])
                 detail = moodle_html.parse_assignment_page(response.text, activity["url"])
                 results.append(
                     {

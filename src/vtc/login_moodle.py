@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import base64
-import json
-import os
 import random
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from vtc.errors import LoginFailed, SecretInputError, UsageError
-from vtc.paths import ensure_private_file, rest_status_path, session_path
+from vtc.moodle.html import looks_like_authenticated_page, looks_like_login_page
+from vtc.paths import rest_status_path, session_path, write_private_json
 from vtc.provenance import utc_now
 from vtc.secrets import (
     PASSWORD_ITEM,
@@ -20,7 +20,9 @@ from vtc.secrets import (
     TOTP_ITEM,
     SecretStore,
     default_store,
+    current_totp,
     read_tty_secret,
+    read_credentials_file,
     resolve_password,
     resolve_student_id,
     resolve_totp_seed,
@@ -51,6 +53,8 @@ def parse_mobile_token_url(url: str) -> str | None:
     if not url:
         return None
     parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"moodlevtc", "moodlemobile"}:
+        return None
     token_param = None
     query = parse_qs(parsed.query)
     if "token" in query:
@@ -66,23 +70,15 @@ def parse_mobile_token_url(url: str) -> str | None:
         padded = raw + "=" * (-len(raw) % 4)
         decoded = base64.b64decode(padded).decode("utf-8", errors="ignore")
     except Exception:
-        decoded = raw
-    parts = [part for part in decoded.replace(":::", ":").split(":") if part]
-    # Moodle uses ':::' separators; keep original split too.
+        return None
     triple = decoded.split(":::")
-    if len(triple) >= 2 and len(triple[1]) >= 16:
+    if len(triple) >= 2 and triple[0] and re.fullmatch(r"[A-Za-z0-9]{16,128}", triple[1]):
         return triple[1]
-    if len(parts) >= 2 and len(parts[1]) >= 16:
-        return parts[1]
-    if len(raw) >= 16 and all(ch.isalnum() for ch in raw):
-        return raw
     return None
 
 
 def _current_otp(seed: str) -> str:
-    import pyotp
-
-    return pyotp.TOTP(seed).now()
+    return current_totp(seed)
 
 
 def login_moodle(
@@ -94,10 +90,12 @@ def login_moodle(
     totp_auto: bool = False,
     headed: bool = False,
     timeout_ms: int = 30000,
+    credentials_file: Path | None = None,
 ) -> LoginResult:
     site = parse_site(site_key)
     store = store or default_store()
-    student_id = resolve_student_id(store)
+    credentials = read_credentials_file(credentials_file) if credentials_file else None
+    student_id = credentials.account if credentials else resolve_student_id(store)
     if not student_id:
         if not stdin_is_tty():
             raise SecretInputError(
@@ -106,8 +104,8 @@ def login_moodle(
         student_id = input("VTC student id: ").strip()
         if not student_id:
             raise UsageError("Student id is required.")
-    password = resolve_password(store)
-    totp_seed = resolve_totp_seed(store) if totp_auto else None
+    password = credentials.password if credentials else resolve_password(store)
+    totp_seed = credentials.totp_secret if credentials else (resolve_totp_seed(store) if totp_auto else None)
 
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -126,7 +124,7 @@ def login_moodle(
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=not headed, env=browser_env)
-            context = browser.new_context(ignore_https_errors=True)
+            context = browser.new_context()
             page = context.new_page()
 
             def capture_request(request: Any) -> None:
@@ -158,7 +156,7 @@ def login_moodle(
                 code_locator = None
 
             if code_locator is not None:
-                if totp_auto and totp_seed:
+                if totp_seed:
                     otp = _current_otp(totp_seed)
                 else:
                     otp = read_tty_secret("Moodle one-time code: ")
@@ -175,13 +173,20 @@ def login_moodle(
                 if not page.url.startswith(site.base_url):
                     raise LoginFailed("Moodle login did not return to the Moodle site.") from exc
 
-            page.goto(site.url("/my/courses.php"), wait_until="domcontentloaded", timeout=timeout_ms)
-            if "/login/" in page.url:
+            response = page.goto(site.url("/my/courses.php"), wait_until="domcontentloaded", timeout=timeout_ms)
+            final_url = urlparse(page.url)
+            html = page.content()
+            if (
+                response is None
+                or not response.ok
+                or final_url.scheme != "https"
+                or final_url.netloc != site.host
+                or looks_like_login_page(html, page.url)
+                or not looks_like_authenticated_page(html)
+            ):
                 raise LoginFailed("Moodle login did not succeed.")
 
-            context.storage_state(path=str(session_file))
-            os.chmod(session_file, 0o600)
-            ensure_private_file(session_file)
+            write_private_json(session_file, context.storage_state())
 
             passport = str(random.randint(10**8, 10**9 - 1))
             launch = (
@@ -200,7 +205,10 @@ def login_moodle(
         totp_seed = None
         raise
     else:
-        store.set(STUDENT_ID_ITEM, student_id)
+        try:
+            store.set(STUDENT_ID_ITEM, student_id)
+        except Exception:
+            pass
         if store_password:
             store.set(PASSWORD_ITEM, password)
         if store_totp and totp_seed:
@@ -208,6 +216,7 @@ def login_moodle(
     finally:
         password = ""
         totp_seed = None
+        credentials = None
 
     if captured_token:
         try:
@@ -218,20 +227,12 @@ def login_moodle(
         captured_token = None
 
     status_path = rest_status_path(site.key)
-    status_path.write_text(
-        json.dumps(
-            {
-                "site": site.key,
-                "rest": rest_state,
-                "session": True,
-                "captured_at": utc_now(),
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    ensure_private_file(status_path)
+    write_private_json(status_path, {
+        "site": site.key,
+        "rest": rest_state,
+        "session": True,
+        "captured_at": utc_now(),
+    })
 
     return LoginResult(
         authenticated=True,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from vtc import __version__
 from vtc.errors import MissingSession, VtcError, WriteBlocked
 from vtc.paths import myportal_session_path, rest_status_path, session_path
-from vtc.secrets import stdin_is_tty
+from vtc.secrets import SECRET_ENV_NAMES, stdin_is_tty
 from vtc.provenance import envelope
 from vtc.sites import SITE_CHOICES
 
@@ -56,18 +57,19 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="vtc",
-        description="Read-only VTC Moodle and MyPortal CLI. Login must run in a local terminal.",
+        description="Read-only VTC Moodle and MyPortal CLI with local session login.",
     )
     parser.add_argument("--version", action="version", version=f"vtc {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    login = sub.add_parser("login", help="Store a local session. Run this in a terminal, not chat.")
+    login = sub.add_parser("login", help="Store a local session using a terminal or private credential file.")
     login_sub = login.add_subparsers(dest="target", required=True)
 
     moodle_login = login_sub.add_parser("moodle", help="Sign in to VTC Moodle via Student SSO.")
     _add_site(moodle_login)
     moodle_login.add_argument("--json", action="store_true")
     moodle_login.add_argument("--headed", action="store_true", help="Show the browser window.")
+    moodle_login.add_argument("--credentials-file", type=Path, help="Read account, password and optional TOTP seed from a private Markdown file.")
     moodle_login.add_argument(
         "--store-password",
         action="store_true",
@@ -88,6 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     myportal_login = login_sub.add_parser("myportal", help="Sign in to VTC MyPortal.")
     myportal_login.add_argument("--json", action="store_true")
     myportal_login.add_argument("--headed", action="store_true", help="Show the browser window.")
+    myportal_login.add_argument("--credentials-file", type=Path, help="Read account, password and optional TOTP seed from a private Markdown file.")
     myportal_login.add_argument(
         "--store-password",
         action="store_true",
@@ -210,7 +213,12 @@ def redact_public_payload(payload: Any) -> Any:
         "totp",
         "secret",
         "sesskey",
+        "totp_secret",
+        "access_token",
+        "refresh_token",
+        "id_token",
     }
+    blocked.update(name.lower() for name in SECRET_ENV_NAMES)
     if isinstance(payload, dict):
         out = {}
         for key, value in payload.items():
@@ -220,13 +228,20 @@ def redact_public_payload(payload: Any) -> Any:
         return out
     if isinstance(payload, list):
         return [redact_public_payload(item) for item in payload]
-    if isinstance(payload, str) and "wstoken=" in payload.lower():
-        return payload.split("wstoken=", 1)[0] + "wstoken=redacted"
-    if isinstance(payload, str) and "token=" in payload and "pluginfile.php" in payload:
-        from urllib.parse import urlparse
+    if isinstance(payload, str):
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-        parsed = urlparse(payload)
-        return parsed._replace(query="").geturl()
+        try:
+            parsed = urlsplit(payload)
+        except ValueError:
+            parsed = None
+        if parsed is not None and parsed.scheme and parsed.query:
+            pairs = parse_qsl(parsed.query, keep_blank_values=True)
+            safe = [(key, value) for key, value in pairs if key.lower() not in blocked]
+            if len(safe) != len(pairs):
+                payload = urlunsplit(parsed._replace(query=urlencode(safe)))
+        names = "|".join(re.escape(key) for key in blocked)
+        return re.sub(rf"(?i)(\b(?:{names})\s*=\s*)[^&\s]+", r"\1redacted", payload)
     return payload
 
 
@@ -301,6 +316,7 @@ def cmd_login_moodle(args: argparse.Namespace) -> dict[str, Any]:
         store_totp=args.store_totp,
         totp_auto=args.totp_auto,
         headed=args.headed,
+        credentials_file=args.credentials_file,
     )
     return envelope(
         command="login.moodle",
@@ -318,7 +334,11 @@ def cmd_login_moodle(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_login_myportal(args: argparse.Namespace) -> dict[str, Any]:
     from vtc.myportal.login import login_myportal
 
-    result = login_myportal(store_password=args.store_password, headed=args.headed)
+    result = login_myportal(
+        store_password=args.store_password,
+        headed=args.headed,
+        credentials_file=args.credentials_file,
+    )
     return envelope(
         command="login.myportal",
         site=None,
@@ -411,11 +431,11 @@ def cmd_myportal_activities(args: argparse.Namespace) -> dict[str, Any]:
             command="myportal.activities",
             site=None,
             source="myportal_html" if found else "unverified",
-            ok=True,
-            status="ok" if items else "unverified",
+            ok=found and bool(items),
+            status="ok" if found and items else "unverified",
             activities=items,
             note=None
-            if items
+            if found and items
             else "No activity records were read. That is unverified, not proof that there are no activities.",
         )
 
@@ -431,11 +451,11 @@ def cmd_myportal_modules(args: argparse.Namespace) -> dict[str, Any]:
             command="myportal.modules",
             site=None,
             source="myportal_html" if found else "unverified",
-            ok=True,
-            status="ok" if items else "unverified",
+            ok=found and bool(items),
+            status="ok" if found and items else "unverified",
             modules=items,
             note=None
-            if items
+            if found and items
             else "No module-selection records were read. That is unverified, not proof that selection is closed.",
         )
 
@@ -454,6 +474,7 @@ def cmd_myportal_apply(args: argparse.Namespace) -> dict[str, Any]:
             ok=applied,
             status="ok" if applied else "unverified",
             applied=applied,
+            action_clicked=bool(result.get("action_clicked")),
             matched=result.get("matched"),
             activities=result.get("activities") or [],
             note=result.get("details"),
@@ -474,6 +495,7 @@ def cmd_myportal_select(args: argparse.Namespace) -> dict[str, Any]:
             ok=selected,
             status="ok" if selected else "unverified",
             selected=selected,
+            action_clicked=bool(result.get("action_clicked")),
             matched=result.get("matched"),
             modules=result.get("modules") or [],
             note=result.get("details"),
@@ -487,19 +509,20 @@ def _cmd_myportal_documents(command: str, kind: str, output: Path | None) -> dic
         result = client.download_documents(kind, output) if output else client.documents(kind)
         items = result.get("documents") or []
         found = bool(result.get("found"))
+        complete = found and bool(items) and (not output or all(item.get("path") for item in items))
         return envelope(
             command=command,
             site=None,
             source="myportal_html" if found else "unverified",
-            ok=True,
-            status="ok" if items else "unverified",
+            ok=complete,
+            status="ok" if complete else "unverified",
             kind=kind,
             output=str(output) if output else None,
             documents=items,
             note=None
-            if items
+            if complete
             else (
-                f"No {kind} files were read. That is unverified, not proof that the document is missing. "
+                f"{kind.capitalize()} files were not fully read or downloaded. That is unverified, not proof that the document is missing. "
                 "Document Download files expire after a short window."
             ),
         )
@@ -590,7 +613,7 @@ def cmd_moodle_assignments(args: argparse.Namespace) -> dict[str, Any]:
             command="moodle.assignments",
             site=args.site,
             source=source if items else "unverified",
-            ok=True,
+            ok=bool(items),
             status=status,
             course=args.course,
             assignments=items,
@@ -612,10 +635,11 @@ def cmd_moodle_sync(args: argparse.Namespace) -> dict[str, Any]:
             dry_run=args.dry_run,
             extract=not args.no_extract,
         )
+        source = result.pop("source", "unverified")
         return envelope(
             command="moodle.sync",
             site=args.site,
-            source=result.get("source") or "unverified",
+            source=source,
             ok=True,
             status="ok",
             **result,

@@ -1,23 +1,26 @@
-"""MyPortal form login. This module may read passwords; agents must not call it."""
+"""MyPortal form login using terminal input or a private credential file."""
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 from vtc.errors import LoginFailed, SecretInputError, UsageError
 from vtc.myportal.constants import LOGIN_BUTTON, LOGOUT_MARKERS, MYPORTAL_URL
 from vtc.myportal.parse import looks_like_myportal_login
-from vtc.paths import ensure_private_file, myportal_session_path
+from vtc.paths import myportal_session_path, write_private_json
 from vtc.pw import type_like_user
 from vtc.secrets import (
     PASSWORD_ITEM,
     STUDENT_ID_ITEM,
     SecretStore,
     default_store,
+    current_totp,
     pop_secret_env,
     read_tty_secret,
+    read_credentials_file,
     resolve_student_id,
     sanitized_environ,
     stdin_is_tty,
@@ -52,9 +55,13 @@ def login_myportal(
     store_password: bool = False,
     headed: bool = False,
     timeout_ms: int = 30000,
+    credentials_file: Path | None = None,
 ) -> LoginResult:
     store = store or default_store()
-    student_id = resolve_student_id(store)
+    credentials = read_credentials_file(credentials_file) if credentials_file else None
+    student_id = credentials.account if credentials else resolve_student_id(store)
+    if student_id and student_id.lower().endswith("@stu.vtc.edu.hk"):
+        student_id = student_id.rsplit("@", 1)[0]
     if not student_id:
         if not stdin_is_tty():
             raise SecretInputError(
@@ -63,7 +70,8 @@ def login_myportal(
         student_id = input("VTC student id: ").strip()
         if not student_id:
             raise UsageError("Student id is required.")
-    password = _resolve_password(store)
+    password = credentials.password if credentials else _resolve_password(store)
+    totp_seed = credentials.totp_secret if credentials else None
 
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -78,7 +86,7 @@ def login_myportal(
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=not headed, env=browser_env)
-            context = browser.new_context(ignore_https_errors=True)
+            context = browser.new_context()
             page = context.new_page()
             page.goto(MYPORTAL_URL, wait_until="domcontentloaded", timeout=timeout_ms)
             type_like_user(page, page.locator("input[name='userid']"), student_id)
@@ -95,7 +103,10 @@ def login_myportal(
             except PlaywrightTimeoutError:
                 code_locator = None
             if code_locator is not None:
-                otp = read_tty_secret("MyPortal one-time code: ")
+                if totp_seed:
+                    otp = current_totp(totp_seed)
+                else:
+                    otp = read_tty_secret("MyPortal one-time code: ")
                 type_like_user(page, code_locator, otp)
                 page.get_by_role("button", name=re.compile(LOGIN_BUTTON, re.IGNORECASE)).click()
                 try:
@@ -115,25 +126,32 @@ def login_myportal(
             ):
                 raise LoginFailed("MyPortal rejected the CNA or password.")
             html = page.content()
-            if looks_like_myportal_login(html, page.url) and not any(
-                marker in body.lower() for marker in LOGOUT_MARKERS
+            final_url = urlparse(page.url)
+            if (
+                final_url.scheme != "https"
+                or final_url.netloc != urlparse(MYPORTAL_URL).netloc
+                or looks_like_myportal_login(html, page.url)
+                or not any(marker in f"{body} {html}".lower() for marker in LOGOUT_MARKERS)
             ):
                 raise LoginFailed("MyPortal login did not succeed.")
 
-            context.storage_state(path=str(session_file))
-            os.chmod(session_file, 0o600)
-            ensure_private_file(session_file)
+            write_private_json(session_file, context.storage_state())
             context.close()
             browser.close()
     except Exception:
         password = ""
         raise
     else:
-        store.set(STUDENT_ID_ITEM, student_id)
+        try:
+            store.set(STUDENT_ID_ITEM, student_id)
+        except Exception:
+            pass
         if store_password:
             store.set(PASSWORD_ITEM, password)
     finally:
         password = ""
+        totp_seed = None
+        credentials = None
 
     return LoginResult(
         authenticated=True,

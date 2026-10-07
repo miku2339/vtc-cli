@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping, MutableMapping
+from dataclasses import dataclass, field
 from getpass import getpass
+from pathlib import Path
 from typing import Protocol
 
 from vtc.errors import SecretInputError
@@ -31,6 +33,56 @@ SECRET_ENV_NAMES = frozenset(
 )
 
 SAFE_VTC_ENV = frozenset({"VTC_STUDENT_ID", "VTC_SITE", "VTC_DATA_DIR", "VTC_CONFIG_DIR"})
+
+
+@dataclass(frozen=True)
+class FileCredentials:
+    account: str
+    password: str = field(repr=False)
+    totp_secret: str | None = field(default=None, repr=False)
+
+
+def read_credentials_file(path: Path) -> FileCredentials:
+    target = Path(path).expanduser()
+    try:
+        if not target.is_file() or target.stat().st_size > 65536:
+            raise SecretInputError("Credential file is missing or too large.")
+        target.chmod(0o600)
+        lines = target.read_text(encoding="utf-8").splitlines()
+    except SecretInputError:
+        raise
+    except Exception:
+        raise SecretInputError("Credential file could not be read.") from None
+    values: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "```")) or stripped == "---":
+            continue
+        key, separator, value = stripped.partition(":")
+        if not separator or key not in {"account", "password", "totp_secret"} or key in values:
+            raise SecretInputError("Credential file must contain account, password and optional totp_secret fields.")
+        values[key] = value.strip()
+    if not values.get("account") or not values.get("password"):
+        raise SecretInputError("Credential file requires a non-empty account and password.")
+    seed = values.get("totp_secret") or None
+    if seed:
+        import pyotp
+
+        try:
+            generator = pyotp.parse_uri(seed) if seed.startswith("otpauth://") else pyotp.TOTP(seed)
+            if not isinstance(generator, pyotp.TOTP):
+                raise ValueError("TOTP required")
+            generator.byte_secret()
+        except Exception:
+            raise SecretInputError("Credential file contains an invalid TOTP seed.") from None
+    return FileCredentials(account=values["account"], password=values["password"], totp_secret=seed)
+
+
+def current_totp(seed: str) -> str:
+    import pyotp
+
+    generator = pyotp.parse_uri(seed) if seed.startswith("otpauth://") else pyotp.TOTP(seed)
+    return generator.now()
 
 
 class SecretStore(Protocol):

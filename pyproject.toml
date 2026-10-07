@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vtc-cli"
 version = "0.2.0"
-description = "Read-only VTC Moodle and MyPortal CLI. Login stays on the local terminal; the agent never receives passwords."
+description = "Read-only VTC Moodle and MyPortal CLI with local sessions and private credential-file login."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
