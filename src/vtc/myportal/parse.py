@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import date, datetime
 from typing import Any
@@ -69,9 +70,11 @@ def looks_like_myportal_login(html_text: str, url: str | None = None) -> bool:
 
 
 def item_id(*parts: str) -> str:
-    joined = " ".join(part for part in parts if part)
+    joined = " ".join(clean_text(part) for part in parts if clean_text(part))
     slug = re.sub(r"[^a-z0-9]+", "-", joined.lower()).strip("-")
-    return slug[:48] or "item"
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:10]
+    prefix = slug[:37].rstrip("-") or "item"
+    return f"{prefix}-{digest}"
 
 
 def select_week_option(
@@ -154,31 +157,39 @@ def parse_timetable_grid(
     for row in grid_rows[1:]:
         if not row:
             continue
-        iterator = iter(row[1:])
-        for day_idx, weekday in enumerate(weekdays):
-            if carry_spans[day_idx] > 0:
-                carry_spans[day_idx] -= 1
-                continue
-            cell = next(iterator, None)
-            if not cell:
-                continue
+        occupied = [span > 0 for span in carry_spans]
+        carry_spans = [max(0, span - 1) for span in carry_spans]
+        day_idx = 0
+        for cell in row[1:]:
+            while day_idx < len(weekdays) and occupied[day_idx]:
+                day_idx += 1
+            if day_idx >= len(weekdays):
+                break
+            colspan = max(1, int(cell.get("colspan", 1) or 1))
+            covered = range(day_idx, min(len(weekdays), day_idx + colspan))
             rowspan = int(cell.get("rowspan", 1) or 1)
             if rowspan > 1:
-                carry_spans[day_idx] = rowspan - 1
+                for covered_idx in covered:
+                    carry_spans[covered_idx] = max(
+                        carry_spans[covered_idx], rowspan - 1
+                    )
             text = cell.get("text", "").strip()
-            if not text:
-                continue
-            parsed = parse_timetable_cell(text, weekday, week_label)
-            if parsed:
-                entries.append(parsed)
+            if text:
+                parsed = parse_timetable_cell(text, weekdays[day_idx], week_label)
+                if parsed:
+                    entries.append(parsed)
+            day_idx += colspan
     return entries, weekdays
 
 
 def header_key(value: str) -> str:
     text = clean_text(value).lower()
+    text = re.sub(r"\s*[↑↓▲▼]+$", "", text).strip()
     mapping = {
         "activity": "title",
+        "activity code": "code",
         "activity name": "title",
+        "activity title": "title",
         "event": "title",
         "module code": "code",
         "module": "code",
@@ -205,32 +216,37 @@ def parse_html_tables(html_text: str, *, base_url: str = "") -> list[dict[str, A
     records: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
     for table in soup.find_all("table"):
-        rows = table.find_all("tr")
+        rows = list(table.find_all("tr", recursive=False))
+        for section in table.find_all(["thead", "tbody", "tfoot"], recursive=False):
+            rows.extend(section.find_all("tr", recursive=False))
         if len(rows) < 2:
             continue
-        headers = [clean_text(cell.get_text(" ", strip=True)) for cell in rows[0].find_all(["th", "td"])]
+        headers = [
+            clean_text(cell.get_text(" ", strip=True))
+            for cell in rows[0].find_all(["th", "td"], recursive=False)
+        ]
         if not any(headers):
             continue
         keys = [header_key(header) for header in headers]
         if len(set(keys)) < 2 and "title" not in keys and "code" not in keys:
             continue
         for row in rows[1:]:
-            cells = row.find_all(["td", "th"])
+            cells = row.find_all(["td", "th"], recursive=False)
             if not cells:
                 continue
             values = [clean_text(cell.get_text(" ", strip=True)) for cell in cells]
             if not any(values):
                 continue
-            fingerprint = tuple(values[:6])
-            if fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-            record: dict[str, Any] = {"cells": {}}
             href = None
             for cell in cells:
                 anchor = cell.find("a", href=True)
                 if anchor and not href:
                     href = urljoin(base_url, anchor["href"])
+            fingerprint = (*values[:6], href or "")
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            record: dict[str, Any] = {"cells": {}}
             for key, header, value in zip(keys, headers, values, strict=False):
                 record["cells"][header] = value
                 if key not in record or key in {"title", "code"}:
@@ -238,7 +254,12 @@ def parse_html_tables(html_text: str, *, base_url: str = "") -> list[dict[str, A
             title = record.get("title") or values[0]
             code = record.get("code") or ""
             record["title"] = title
-            record["id"] = item_id(code, title, record.get("date") or record.get("period") or "")
+            record["id"] = item_id(
+                code,
+                title,
+                record.get("date") or record.get("period") or "",
+                href or "",
+            )
             if href:
                 record["url"] = href
             records.append(record)
@@ -264,7 +285,7 @@ def parse_link_records(html_text: str, *, base_url: str = "") -> list[dict[str, 
             seen.add(href)
             records.append(
                 {
-                    "id": item_id(kind or "doc", title),
+                    "id": item_id(kind or "doc", title, href),
                     "title": title,
                     "url": href,
                     "kind": kind,

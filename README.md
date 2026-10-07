@@ -1,82 +1,117 @@
 # vtc-cli
 
-非官方的 VTC Moodle / MyPortal 命令列工具。用你自己的學生帳戶在**本機 Terminal**登入；密碼、TOTP、cookie、token 不會進 git，也不該貼到聊天裡。
+非官方 VTC Moodle／MyPortal 命令列工具。登入與 session 留在執行指令的電腦，可用 JSON 輸出供本機工具或 agent 讀取。
 
-這不是 VTC 官方產品，也不是雲端 MCP。帳號與 session 必須留在你的電腦。
+功能包括：
+
+- Moodle 課程、功課與截止日期
+- 課程檔案同步及 PDF／Word／PowerPoint 文字擷取
+- MyPortal 課表、活動報名選項、選科資料
+- 成績與學費文件查閱及下載
 
 ## 安裝
 
-需要 Python 3.11+（macOS 可用 Keychain 存密碼）。
+需要 Python 3.11+ 及 Playwright Chromium。先進入專案目錄，再建立及啟用虛擬環境：
 
 ```bash
 git clone https://github.com/miku233333/vtc-cli.git
 cd vtc-cli
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install -e .
 python -m playwright install chromium
 ```
 
-之後指令都是 `vtc`。若沒啟動 venv，用 `.venv/bin/vtc`。
+之後可使用 `vtc`。每次開新 Terminal 都要先 `cd` 到專案並啟用 `.venv`；或直接使用 `.venv/bin/vtc`。
 
-## 登入（只在本機 Terminal）
+## 登入
 
-Moodle 必須指定學年，沒有預設值。MyPortal 沒有 `--site`。
+Moodle 的所有指令都必須指定學年：`--site ay2526` 或 `--site ay2627`。MyPortal 沒有 `--site`。
+
+一般情況由帳戶持有人在本機 Terminal 互動登入：
 
 ```bash
-vtc login moodle --site ay2526
 vtc login moodle --site ay2627
 vtc login myportal
 ```
 
-可選：`--store-password` 把密碼寫進 macOS Keychain。`--totp-auto` 只用於 Moodle，而且只有頁面真的出現驗證碼時才會讀 TOTP seed。
+可加 `--headed` 顯示瀏覽器。`--store-password` 會把密碼保存到系統 Keychain。Moodle 的 `--totp-auto` 可在頁面要求 MFA 時使用已保存的 TOTP；`--store-totp` 可配合它保存 TOTP seed。
 
-不要在 Cursor / 聊天裡跑 `vtc login`。stdin 不是 TTY、又沒有 Keychain 或短命環境變數時，登入會直接拒絕，不會把密碼印出來。
+### 私人 Markdown 帳密檔
 
-## Moodle
+帳戶持有人亦可明確授權自動登入，並在專案外準備私人 Markdown 檔：
+
+```text
+account: ACCOUNT_PLACEHOLDER
+password: PASSWORD_PLACEHOLDER
+totp_secret: BASE32_OR_OTPAUTH_URI_PLACEHOLDER
+```
+
+`account` 與 `password` 必填。`totp_secret` 選填，可使用 Base32 seed 或 `otpauth://` URI。檔案是明文敏感資料；工具讀取時會把權限設為 `0600`，但仍應存放在專案及同步資料夾之外。
+
+```bash
+vtc login moodle --site ay2627 --credentials-file ~/secure/credentials.md --json
+vtc login myportal --credentials-file ~/secure/credentials.md --json
+```
+
+只有帳戶持有人已明確授權並自行準備此檔案時，agent 才可使用 `--credentials-file`。不要把帳密內容貼到聊天、Issue、PR 或指令輸出。
+
+## Moodle 常用指令
 
 ```bash
 vtc moodle status --site ay2627 --json
 vtc moodle courses --site ay2627 --json
 vtc moodle assignments --site ay2627 --course COURSE_CODE --json
-vtc moodle sync --site ay2627 --course COURSE_CODE --output ./COURSE_CODE --dry-run --json
-vtc moodle extract --path ./COURSE_CODE/lecture.pdf --json
+vtc moodle sync --site ay2627 --course COURSE_CODE --output ./course-files --dry-run --json
+vtc moodle sync --site ay2627 --course COURSE_CODE --output ./course-files --json
+vtc moodle extract --path ./course-files/lecture.pdf --json
 ```
 
-`sync` 會下載課程裡的 File / Folder / Assignment 附件（PDF、`.docx`、`.pptx` 等），並在本機讀文字。JSON 只保留摘錄；完整文字寫在檔案旁邊的 `*.extracted.txt`。
+`sync` 會下載課程 File、Folder 及 Assignment 附件，並預設擷取支援檔案的文字；加 `--no-extract` 可只下載。`--dry-run` 只列出計劃，不寫入下載檔。`extract` 支援已下載的 PDF、Word 及 PowerPoint 檔案。
 
-## MyPortal
+## MyPortal 常用指令
 
 ```bash
 vtc myportal status --json
+vtc myportal timetable --json
 vtc myportal timetable --today --json
 vtc myportal activities --json
 vtc myportal modules --json
 vtc myportal transcript --json
+vtc myportal transcript --output ./documents --json
 vtc myportal tuition --json
+vtc myportal tuition --output ./documents --json
 ```
 
-成績單／學費單走「文件下載」（學業成績證明書、學費繳費通知書）。加 `--output DIR` 可把 PDF 存下來。讀不到是 `unverified`，不是「沒有課／沒有帳單」；那些檔案本來也只會留一段時間。
-
-會改紀錄的動作只准本機 Terminal，而且必須加 `--confirm`：
+活動報名及選科會改動校方紀錄，只供帳戶持有人在互動式本機 Terminal 使用，並必須明確加入 `--confirm`：
 
 ```bash
-vtc myportal apply --id <活動id> --confirm
-vtc myportal select --code COURSE_CODE --confirm
+vtc myportal apply --id ACTIVITY_ID --confirm
+vtc myportal select --code MODULE_CODE --confirm
 ```
 
-Session 存在 `~/.local/share/vtc/`，權限 `0600`。不要把 `*.storage.json` 傳給別人。
+## Agent 使用邊界
 
-## Cursor / 其他 agent
+在帳戶持有人完成登入，或明確授權私人帳密檔登入後，agent 可執行只讀的 Moodle／MyPortal 指令及獲授權的本機下載、擷取工作。Agent 不可執行 `myportal apply` 或 `myportal select`，亦不可提交表單、改動校方紀錄或公開敏感資料。
 
-Repo 內有 `.cursor/skills/vtc-cli/SKILL.md`。Agent 只可跑只讀的 `vtc moodle … --json` 與 `vtc myportal … --json`，不可跑 `login`、`apply`、`select`。
+`unverified` 表示工具未能可靠讀取或確認資料，不代表「沒有功課」、「沒有課堂」、「沒有選科」或「沒有文件」。自動化程式應同時檢查 JSON 的 `ok`、`status`、`source` 及程序 exit code。
 
-## 安全
+| Exit code | 意義 |
+|---:|---|
+| `0` | 已驗證成功 |
+| `1` | 執行或內部錯誤 |
+| `2` | `unverified`、缺少可用 session；無效命令列參數亦可能由 argparse 使用此代碼 |
+| `3` | 工具判定的用法錯誤 |
+| `4` | 登入失敗、敏感資料輸入被拒或寫入操作被阻擋 |
 
-- 不要把密碼、TOTP、cookie、token、session 檔貼到 issue、PR 或群組。
-- 每個同學用自己的 CNA 登入。
-- `unverified` 代表還沒讀到，不代表沒有作業、課表或帳單。
+## 私密資料
 
-## 授權
+- Session 預設保存在 `~/.local/share/vtc/`，檔案權限為 `0600`。
+- `*.storage.json`、帳密 Markdown、密碼、TOTP、cookie、token 及下載表單 hidden fields 都屬敏感資料。
+- 不要提交上述資料到 Git；`.gitignore` 只涵蓋常見檔名，私人檔仍應放在專案外。
+- 不要在不同電腦、agent VM 或不同使用者之間複製 session 檔。每部電腦都應由同一帳戶持有人在該機器登入。
+- `--json` 會過濾已知敏感欄位，但不應視為保存或分享完整輸出的授權。
 
-MIT。VTC、Moodle、MyPortal 是其權利人的名稱；本工具未獲官方背書。
+## 授權與聲明
+
+本專案採用 MIT License。VTC、Moodle 與 MyPortal 名稱及服務屬其各自權利人；本工具並非官方產品，亦未獲官方背書。

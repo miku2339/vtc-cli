@@ -4,10 +4,12 @@ from pathlib import Path
 from vtc.myportal.parse import (
     classify_document,
     filter_documents,
+    item_id,
     looks_like_myportal_login,
     match_activity,
     match_module,
     parse_html_tables,
+    parse_link_records,
     parse_timetable_cell,
     parse_timetable_grid,
     select_week_option,
@@ -28,7 +30,7 @@ def test_select_week_option_picks_containing_week():
 
 
 def test_parse_timetable_grid_reads_rowspan_cells():
-    cell = "ITP3902\nLecture (09:00 - 11:00)\nST-301\nCHAN, Tai Man\nWk:3"
+    cell = "ITP3902\nLecture (09:00 - 11:00)\nST-301\nTEST, Instructor A\nWk:3"
     parsed = parse_timetable_cell(cell, "星期一", "(3) 14-Sep-2026 - 20-Sep-2026")
     assert parsed is not None
     assert parsed["weekday"] == "Monday"
@@ -55,7 +57,50 @@ def test_parse_timetable_grid_reads_rowspan_cells():
     entries, weekdays = parse_timetable_grid(grid, "(3) 14-Sep-2026 - 20-Sep-2026")
     assert weekdays == ["Monday", "Tuesday"]
     assert len(entries) == 1
-    assert entries[0]["instructor"] == "CHAN, Tai Man"
+    assert entries[0]["instructor"] == "TEST, Instructor A"
+
+
+def test_parse_timetable_grid_honours_colspan_when_aligning_days():
+    wednesday = "ITP4206\nTutorial (13:00 - 14:00)\nST-302\nTEST, Instructor B\nWk:3"
+    grid = [
+        [
+            {"text": "", "colspan": 1},
+            {"text": "Monday", "colspan": 1},
+            {"text": "Tuesday", "colspan": 1},
+            {"text": "Wednesday", "colspan": 1},
+        ],
+        [
+            {"text": "13:00", "colspan": 1},
+            {"text": "", "colspan": 2},
+            {"text": wednesday, "colspan": 1},
+        ],
+    ]
+
+    entries, _ = parse_timetable_grid(grid, "(3) 14-Sep-2026 - 20-Sep-2026")
+
+    assert len(entries) == 1
+    assert entries[0]["weekday"] == "Wednesday"
+
+
+def test_item_id_preserves_uniqueness_beyond_readable_prefix_and_for_chinese():
+    prefix = "A" * 60
+
+    assert item_id(prefix, "First") != item_id(prefix, "Second")
+    assert item_id("迎新活動") != item_id("職涯講座")
+    assert item_id("迎新活動") == item_id("迎新活動")
+    assert len(item_id(prefix, "First")) <= 48
+
+
+def test_same_name_document_links_get_distinct_stable_ids():
+    html = """
+    <a href="/files/2025/transcript.pdf">Transcript</a>
+    <a href="/files/2026/transcript.pdf">Transcript</a>
+    """
+
+    records = parse_link_records(html, base_url="https://example.test/")
+
+    assert len(records) == 2
+    assert records[0]["id"] != records[1]["id"]
 
 
 def test_parse_activity_and_module_tables():
@@ -66,6 +111,26 @@ def test_parse_activity_and_module_tables():
     assert activities[0]["id"]
     assert match_activity(activities, activities[0]["id"])["title"] == "Orientation Day"
     assert match_module(modules, "ITP3902")["title"] == "Programming"
+
+
+def test_parse_activity_datagrid_uses_direct_rows_and_sortable_headers():
+    html = """
+    <table class="layout">
+      <tr><td>Student Activity</td></tr>
+      <tr><td>
+        <table class="datagrid">
+          <tr><th>Activity Code</th><th>Activity Title ↑</th><th>Full</th></tr>
+          <tr><td>TESTACT0001</td><td>Career Workshop</td><td>No</td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+
+    records = parse_html_tables(html)
+
+    assert len(records) == 1
+    assert records[0]["code"] == "TESTACT0001"
+    assert records[0]["title"] == "Career Workshop"
 
 
 def test_classify_transcript_and_tuition_documents():

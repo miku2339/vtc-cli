@@ -1,5 +1,5 @@
 ---
-description: VTC Moodle and MyPortal CLI — agents never login or handle passwords; read-only vtc commands only
+description: VTC Moodle and MyPortal CLI — private credential-file login and read-only commands
 alwaysApply: true
 ---
 
@@ -7,14 +7,14 @@ alwaysApply: true
 
 Use `.cursor/skills/vtc-cli/SKILL.md`.
 
-- Binary: `"/Users/ouqixi/vtc cli/.venv/bin/vtc"`
+- Binary: `.venv/bin/vtc` in the active repository; resolve the absolute path when running outside it.
 - Moodle requires `--site ay2526` or `--site ay2627`; MyPortal has no `--site`
-- Do not run `vtc login` from this chat
+- Agent login requires the user's local `--credentials-file PATH --json`; interactive login remains human-only
 - Do not run `vtc myportal apply` or `vtc myportal select`
 - Do not print passwords, TOTP, cookies, tokens, or `*.storage.json`
 - Read-only Moodle: `status`, `courses`, `assignments`, `sync`, `extract`
 - Read-only MyPortal: `status`, `timetable`, `activities`, `modules`, `transcript`, `tuition`
 - Missing data is `unverified`, not "no homework"
 - Do not paste full lecture PDF/Word/PPT, transcript, or tuition text into chat; use excerpts
-- If there is no session, ask for a local Terminal login. Do not copy session files to Grok Bot's cloud computer or use a proxy browser as a fallback.
-- Grok Bot is not this Mac: it uses its own Linux VM. See `GROKBOT.md`. This Cursor chat uses the Mac binary above.
+- If there is no session, use the user-prepared private credential file or ask for a local Terminal login. Never request credentials in chat. Do not copy session files to Grok Bot's cloud computer or use a proxy browser as a fallback.
+- Grok Bot is not this Mac: it uses its own Linux VM. See `GROKBOT.md`. Cursor uses the binary in the local repository.

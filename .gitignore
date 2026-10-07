@@ -24,3 +24,5 @@ htmlcov/
 .env
 .env.*
 !/.env.example
+credentials.md
+*.credentials.md

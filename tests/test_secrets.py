@@ -49,3 +49,39 @@ def test_resolve_password_refuses_non_tty_without_secret(monkeypatch):
     monkeypatch.setattr("vtc.secrets.getpass", fake_getpass)
     with pytest.raises(SecretInputError, match="not a TTY"):
         resolve_password(MemoryStore(), {})
+
+
+def test_markdown_credentials_keep_secrets_private(tmp_path):
+    from vtc.secrets import read_credentials_file
+
+    path = tmp_path / "credentials.md"
+    path.write_text(
+        "# VTC\naccount: testuser\npassword: test:password\ntotp_secret: JBSWY3DPEHPK3PXP\n",
+        encoding="utf-8",
+    )
+    credentials = read_credentials_file(path)
+    assert credentials.account == "testuser"
+    assert credentials.password == "test:password"
+    assert credentials.totp_secret == "JBSWY3DPEHPK3PXP"
+    assert "test:password" not in repr(credentials)
+    assert "JBSWY3DPEHPK3PXP" not in repr(credentials)
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_markdown_credentials_errors_do_not_expose_contents(tmp_path):
+    from vtc.secrets import read_credentials_file
+
+    path = tmp_path / "credentials.md"
+    path.write_text("password: private-test-value\n", encoding="utf-8")
+    with pytest.raises(SecretInputError) as caught:
+        read_credentials_file(path)
+    assert "private-test-value" not in str(caught.value)
+
+
+def test_markdown_credentials_accept_totp_uri(tmp_path):
+    from vtc.secrets import read_credentials_file
+
+    path = tmp_path / "credentials.md"
+    uri = "otpauth://totp?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30"
+    path.write_text(f"account: testuser\npassword: test-password\ntotp_secret: {uri}\n", encoding="utf-8")
+    assert read_credentials_file(path).totp_secret == uri

@@ -11,14 +11,15 @@ Four runtimes share this CLI. Do not mix their machines:
 
 Grok Bot phone/web/desktop all use the cloud computer, not the Mac. See `GROKBOT.md`.
 
-Do not mix login with chat. Agents only run read-only `vtc moodle … --json` and `vtc myportal … --json` after a human login on **that same machine**.
+Keep credentials out of chat. Agents may run `vtc login … --credentials-file PATH --json` using a user-prepared private Markdown file on **that same machine**, then run read-only `vtc moodle … --json` and `vtc myportal … --json`.
 
 Load `.cursor/skills/vtc-cli/SKILL.md` before Moodle/MyPortal work **in Cursor**.
 
-- Cursor binary: `"/Users/ouqixi/vtc cli/.venv/bin/vtc"`
+- Local binary: resolve `.venv/bin/vtc` from the active repository root; use its absolute path if the shell is elsewhere.
 - Grok Bot binary: `/workspace/vtc-cli/.venv/bin/vtc`
 - Moodle `--site ay2526|ay2627` is required; MyPortal has no `--site`
-- Never run `vtc login` from an agent chat (Grok Bot: student takes over Agent Computer)
+- Interactive `vtc login` is human-only. Agent login requires the user's local `--credentials-file`; never request its contents in chat.
+- Credential Markdown fields are `account`, `password`, and optional `totp_secret`. Keep the file outside Git with mode `0600`.
 - Never run `vtc myportal apply` or `vtc myportal select`
 - Never print passwords, TOTP, cookies, tokens, or storage JSON
 - Never copy `*.storage.json` between Mac and the Grok Bot VM

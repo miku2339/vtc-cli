@@ -3,9 +3,11 @@ from pathlib import Path
 from vtc.moodle.html import (
     extract_course_code,
     is_syncable_modtype,
+    looks_like_authenticated_page,
     parse_assignment_page,
     parse_course_list,
     parse_course_page,
+    safe_filename,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -37,3 +39,13 @@ def test_parse_assignment_page_keeps_due_date_and_does_not_claim_empty():
     assert parsed["due"] == "Monday, 15 September 2026, 11:59 PM"
     assert parsed["opened"].startswith("Monday")
     assert extract_course_code("LAN4103 English") == "LAN4103"
+
+
+def test_safe_filename_preserves_unicode_and_blocks_traversal():
+    assert safe_filename("../講義.pdf") == "講義.pdf"
+    assert safe_filename(r"..\功課.pdf") == "功課.pdf"
+
+
+def test_authenticated_page_requires_exact_loggedin_body_class():
+    assert looks_like_authenticated_page('<body class="loggedin roleshortname-student"></body>')
+    assert not looks_like_authenticated_page('<body class="notloggedin"></body>')
