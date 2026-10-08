@@ -15,7 +15,7 @@ On the Grok Bot cloud computer only:
 
 ```bash
 cd /workspace
-git clone https://github.com/miku233333/vtc-cli.git
+git clone https://github.com/miku2339/vtc-cli.git
 cd vtc-cli
 python3 -m venv .venv
 . .venv/bin/activate

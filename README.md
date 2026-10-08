@@ -14,7 +14,7 @@
 需要 Python 3.11+ 及 Playwright Chromium。先進入專案目錄，再建立及啟用虛擬環境：
 
 ```bash
-git clone https://github.com/miku233333/vtc-cli.git
+git clone https://github.com/miku2339/vtc-cli.git
 cd vtc-cli
 python3 -m venv .venv
 source .venv/bin/activate

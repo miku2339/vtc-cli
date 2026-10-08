@@ -9,8 +9,8 @@ description = "Read-only VTC Moodle and MyPortal CLI with local sessions and pri
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "miku233333" }]
-urls = { Homepage = "https://github.com/miku233333/vtc-cli", Repository = "https://github.com/miku233333/vtc-cli" }
+authors = [{ name = "miku2339" }]
+urls = { Homepage = "https://github.com/miku2339/vtc-cli", Repository = "https://github.com/miku2339/vtc-cli" }
 dependencies = [
     "beautifulsoup4>=4.12",
     "httpx>=0.27",
