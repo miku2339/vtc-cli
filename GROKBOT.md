@@ -27,7 +27,7 @@ python -m playwright install chromium
 
 Use the binary installed on the cloud computer. A local Mac checkout has a separate path and session.
 
-Local-computer execution on the Mac is a different, optional policy. Do not fall back to it for Moodle/MyPortal unless the student explicitly enabled it and approved the command.
+Local-computer execution on the Mac is a different, optional policy. Do not fall back to it for Moodle/MyPortal/Library unless the student explicitly enabled it and approved the command.
 
 ## Login
 
@@ -36,6 +36,9 @@ Default: the student opens **Agent Computer**, takes over, and runs login in tha
 ```bash
 /workspace/vtc-cli/.venv/bin/vtc login moodle --site ay2627
 /workspace/vtc-cli/.venv/bin/vtc login myportal
+/workspace/vtc-cli/.venv/bin/vtc login library --service catalogue
+/workspace/vtc-cli/.venv/bin/vtc login library --service papers
+/workspace/vtc-cli/.venv/bin/vtc login library --service syllabuses
 ```
 
 Need `ay2526` as well, run a second Moodle login with `--site ay2526`.
@@ -45,6 +48,9 @@ The student may instead prepare a private `~/.config/vtc/credentials.md` on the 
 ```bash
 /workspace/vtc-cli/.venv/bin/vtc login moodle --site ay2627 --credentials-file ~/.config/vtc/credentials.md --json
 /workspace/vtc-cli/.venv/bin/vtc login myportal --credentials-file ~/.config/vtc/credentials.md --json
+/workspace/vtc-cli/.venv/bin/vtc login library --service catalogue --credentials-file ~/.config/vtc/credentials.md --json
+/workspace/vtc-cli/.venv/bin/vtc login library --service papers --credentials-file ~/.config/vtc/credentials.md --json
+/workspace/vtc-cli/.venv/bin/vtc login library --service syllabuses --credentials-file ~/.config/vtc/credentials.md --json
 ```
 
 Keep the file outside Git with mode `0600`. Do not copy Mac credentials or sessions to the cloud computer. Without a prepared file, interactive login remains human-only.
@@ -52,7 +58,7 @@ Keep the file outside Git with mode `0600`. Do not copy Mac credentials or sessi
 - Do not type passwords, TOTP, or cookies into chat.
 - Do not run `vtc login` unattended if it would echo a secret into the transcript.
 - Linux has no macOS Keychain. `--store-password` is optional and only if a keyring actually works on the VM.
-- Session files on the cloud computer are `~/.local/share/vtc/*.storage.json` (mode `0600`). Treat them as secrets.
+- Session files on the cloud computer are `~/.local/share/vtc/` (mode `0600`). Treat storage JSON, Library JWT, sessionStorage and SAML data as secrets.
 - The cloud computer is **shared by every Bot on the account**. A VTC login there is visible to all of those Bots.
 
 ### If env secrets are missing
@@ -64,7 +70,9 @@ Keep the file outside Git with mode `0600`. Do not copy Mac credentials or sessi
 3. A Grok Bot secure prompt that injects env **only into that login process**, then unsets it, is allowed as a one-shot. Do not write secrets into `.bashrc`, systemd env, or a permanent cloud env store.
 4. Never ask the student to paste the password into chat, and never keep `VTC_PASSWORD` exported in the default shell.
 
-## After login — read-only only
+## Read-only commands
+
+Library catalogue and official public information do not require a private session. Account, papers and syllabuses require their matching service session.
 
 ```bash
 /workspace/vtc-cli/.venv/bin/vtc moodle status --site ay2627 --json
@@ -78,22 +86,37 @@ Keep the file outside Git with mode `0600`. Do not copy Mac credentials or sessi
 /workspace/vtc-cli/.venv/bin/vtc myportal modules --json
 /workspace/vtc-cli/.venv/bin/vtc myportal transcript --json
 /workspace/vtc-cli/.venv/bin/vtc myportal tuition --json
+/workspace/vtc-cli/.venv/bin/vtc library search --query "design" --scope all --json
+/workspace/vtc-cli/.venv/bin/vtc library record --id RECORD_ID --json
+/workspace/vtc-cli/.venv/bin/vtc library account --json
+/workspace/vtc-cli/.venv/bin/vtc library loans --json
+/workspace/vtc-cli/.venv/bin/vtc library requests --json
+/workspace/vtc-cli/.venv/bin/vtc library fines --json
+/workspace/vtc-cli/.venv/bin/vtc library papers --course COURSE_CODE --page 1 --per-page 20 --json
+/workspace/vtc-cli/.venv/bin/vtc library syllabuses --course COURSE_CODE --page 1 --per-page 20 --json
+/workspace/vtc-cli/.venv/bin/vtc library download --service papers --id ITEM_ID --query COURSE_CODE --output ./library-files --json
+/workspace/vtc-cli/.venv/bin/vtc library extract --path ./library-files/document.pdf --json
+/workspace/vtc-cli/.venv/bin/vtc library links --json
+/workspace/vtc-cli/.venv/bin/vtc library resources --category databases --query "management" --json
+/workspace/vtc-cli/.venv/bin/vtc library hours --json
 ```
 
-- Moodle `--site ay2526|ay2627` is required. MyPortal has no `--site`.
+- Moodle `--site ay2526|ay2627` is required. MyPortal and Library have no `--site`.
+- Library `catalogue`, `papers` and `syllabuses` use separate sessions. Account, loans, requests and fines require the `catalogue` session.
 - Do not run `myportal apply` or `myportal select`.
+- Do not renew, reserve, cancel, pay fines or book a Library room. `room-booking` reads official information only.
 - Missing session or unread records are `unverified`, not empty.
 - Return excerpts and filenames, not whole lecture files, transcripts, or tuition PDFs.
-- Never print passwords, TOTP, cookies, tokens, or storage JSON.
+- Never print passwords, TOTP, cookies, tokens, Library JWT, sessionStorage, SAML data, or storage JSON.
 
 ## Do not offer these
 
 Refuse even if asked:
 
-1. Copying Mac `*.storage.json`, cookies, or tokens onto the cloud computer.
-2. Using a browser + `socks5://127.0.0.1:7890` (or any proxy) as a Moodle/MyPortal fallback.
+1. Copying Mac `*.storage.json`, cookies, tokens, Library JWT, sessionStorage or SAML data onto the cloud computer.
+2. Using a browser + `socks5://127.0.0.1:7890` (or any proxy) as a Moodle/MyPortal/Library fallback.
 3. Asking the student to paste a password or OTP into this chat.
-4. Claiming Moodle data was read when `vtc` was not actually run on the cloud computer.
+4. Claiming Moodle, MyPortal or Library data was read when `vtc` was not actually run on the cloud computer.
 5. Persisting `VTC_PASSWORD` / `VTC_TOTP_SECRET` in the cloud shell profile or a standing env store.
 
 If install or login is still needed, say so and stop. Do not invent a Mac-only or proxy path.

@@ -11,18 +11,21 @@ Four runtimes share this CLI. Do not mix their machines:
 
 Grok Bot phone/web/desktop all use the cloud computer, not the Mac. See `GROKBOT.md`.
 
-Keep credentials out of chat. Agents may run `vtc login … --credentials-file PATH --json` using a user-prepared private Markdown file on **that same machine**, then run read-only `vtc moodle … --json` and `vtc myportal … --json`.
+Keep credentials out of chat. Agents may run `vtc login … --credentials-file PATH --json` using a user-prepared private Markdown file on **that same machine**, then run read-only `vtc moodle … --json`, `vtc myportal … --json` and `vtc library … --json`.
 
-Load `.cursor/skills/vtc-cli/SKILL.md` before Moodle/MyPortal work **in Cursor**.
+Load `.cursor/skills/vtc-cli/SKILL.md` before Moodle/MyPortal/Library work **in Cursor**.
 
 - Local binary: resolve `.venv/bin/vtc` from the active repository root; use its absolute path if the shell is elsewhere.
 - Grok Bot binary: `/workspace/vtc-cli/.venv/bin/vtc`
-- Moodle `--site ay2526|ay2627` is required; MyPortal has no `--site`
+- Moodle `--site ay2526|ay2627` is required; MyPortal and Library have no `--site`
 - Interactive `vtc login` is human-only. Agent login requires the user's local `--credentials-file`; never request its contents in chat.
 - Credential Markdown fields are `account`, `password`, and optional `totp_secret`. Keep the file outside Git with mode `0600`.
+- Library protected services use separate `catalogue`, `papers` and `syllabuses` sessions. Account, loans, requests and fines require the `catalogue` session.
 - Never run `vtc myportal apply` or `vtc myportal select`
-- Never print passwords, TOTP, cookies, tokens, or storage JSON
+- Never renew, reserve, cancel, pay fines or book a Library room; `room-booking` only reads official information.
+- Never print passwords, TOTP, cookies, tokens, Library JWT, sessionStorage, SAML data, or storage JSON
 - Never copy `*.storage.json` between Mac and the Grok Bot VM
-- Never use a proxy browser as a Moodle/MyPortal fallback
+- Never copy Library session material between hosts or machines.
+- Never use a proxy browser as a Moodle/MyPortal/Library fallback
 - `unverified` means unread, not empty
-- PDF/Word/PPT: `sync` then `extract`; paste excerpts, not whole lectures or transcripts
+- PDF/Word/PPT: Moodle uses `sync` then `extract`; Library uses `download` then `extract`. Paste excerpts, not whole documents or transcripts.

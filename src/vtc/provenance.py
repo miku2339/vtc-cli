@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-ALLOWED_SOURCES = {"moodle_rest", "moodle_html", "myportal_html", "unverified"}
+ALLOWED_SOURCES = {"moodle_rest", "moodle_html", "myportal_html", "library_html", "library_api", "unverified"}
 
 
 def utc_now() -> str:

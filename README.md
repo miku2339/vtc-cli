@@ -1,6 +1,6 @@
 # vtc-cli
 
-非官方 VTC Moodle／MyPortal 命令列工具。登入與 session 留在執行指令的電腦，可用 JSON 輸出供本機工具或 agent 讀取。
+非官方 VTC Moodle／MyPortal／Library 命令列工具。登入與 session 留在執行指令的電腦，可用 JSON 輸出供本機工具或 agent 讀取。
 
 功能包括：
 
@@ -8,6 +8,8 @@
 - 課程檔案同步及 PDF／Word／PowerPoint 文字擷取
 - MyPortal 課表、活動報名選項、選科資料
 - 成績與學費文件查閱及下載
+- Library 目錄、電子期刊、館藏紀錄與借閱帳戶查閱
+- 歷屆試卷、課程大綱及 Library 公開資源與服務資訊
 
 ## 安裝
 
@@ -26,16 +28,19 @@ python -m playwright install chromium
 
 ## 登入
 
-Moodle 的所有指令都必須指定學年：`--site ay2526` 或 `--site ay2627`。MyPortal 沒有 `--site`。
+Moodle 的所有指令都必須指定學年：`--site ay2526` 或 `--site ay2627`。MyPortal 與 Library 沒有 `--site`。
 
 一般情況由帳戶持有人在本機 Terminal 互動登入：
 
 ```bash
 vtc login moodle --site ay2627
 vtc login myportal
+vtc login library --service catalogue
+vtc login library --service papers
+vtc login library --service syllabuses
 ```
 
-可加 `--headed` 顯示瀏覽器。`--store-password` 會把密碼保存到系統 Keychain。Moodle 的 `--totp-auto` 可在頁面要求 MFA 時使用已保存的 TOTP；`--store-totp` 可配合它保存 TOTP seed。
+可加 `--headed` 顯示瀏覽器。Moodle／MyPortal 的 `--store-password` 會把密碼保存到系統 Keychain。Moodle 的 `--totp-auto` 可在頁面要求 MFA 時使用已保存的 TOTP；`--store-totp` 可配合它保存 TOTP seed。
 
 ### 私人 Markdown 帳密檔
 
@@ -52,6 +57,9 @@ totp_secret: BASE32_OR_OTPAUTH_URI_PLACEHOLDER
 ```bash
 vtc login moodle --site ay2627 --credentials-file ~/secure/credentials.md --json
 vtc login myportal --credentials-file ~/secure/credentials.md --json
+vtc login library --service catalogue --credentials-file ~/secure/credentials.md --json
+vtc login library --service papers --credentials-file ~/secure/credentials.md --json
+vtc login library --service syllabuses --credentials-file ~/secure/credentials.md --json
 ```
 
 只有帳戶持有人已明確授權並自行準備此檔案時，agent 才可使用 `--credentials-file`。不要把帳密內容貼到聊天、Issue、PR 或指令輸出。
@@ -83,6 +91,51 @@ vtc myportal tuition --json
 vtc myportal tuition --output ./documents --json
 ```
 
+## Library 常用指令
+
+Library 目錄搜尋、館藏紀錄及公開網站資料不需要私人 session：
+
+```bash
+vtc library search --query "design" --scope all --offset 0 --limit 20 --json
+vtc library journals --query "engineering" --json
+vtc library record --id RECORD_ID --json
+vtc library links --json
+vtc library resources --category databases --query "management" --json
+vtc library resources --category videos --query "一帶一路" --json
+vtc library hours --json
+vtc library locations --json
+vtc library news --json
+vtc library services --json
+vtc library regulations --json
+vtc library membership --json
+vtc library remote-access --json
+vtc library room-booking --json
+vtc library laptop-loans --json
+vtc library forms --json
+vtc library staff --json
+vtc library alumni --json
+```
+
+`search` 的 scope 可選 all、catalogue、books、articles、media 或 videos。`resources` 支援 all、databases、ebooks、ejournals、videos、repositories 及 guides；其 `kind` 會區分目錄入口與已讀取的資源 collection。影片無關鍵字時亦會提供目前 facet 與 `scope`，不代表全館影片清單。`links` 回傳官方網站目錄；`room-booking` 只讀取官方預約資訊，不會建立預約。
+
+Library 借閱帳戶使用預設的 `catalogue` session；歷屆試卷與課程大綱各自使用 `papers`、`syllabuses` session。三個 session 分開登入：
+
+```bash
+vtc library status --service catalogue --json
+vtc library account --json
+vtc library loans --json
+vtc library requests --json
+vtc library fines --json
+vtc library papers --course COURSE_CODE --year YEAR --page 1 --per-page 20 --json
+vtc library syllabuses --course COURSE_CODE --year YEAR --page 1 --per-page 20 --json
+vtc library filters --service papers --json
+vtc library filters --service papers --discipline DISCIPLINE_UUID --department DEPARTMENT_UUID --json
+vtc library download --service papers --id ITEM_ID --query "COURSE_CODE" --output ./library-files --json
+vtc library extract --path ./library-files/document.pdf --json
+```
+
+`papers`、`syllabuses` 可按 discipline、department、course 及 year 篩選；`papers` 另支援 session 及 level。篩選值由 `filters` 取得。搜尋結果的 `record_id` 可交給 `download --id`，並以相同 `--query` 重查該文件。`account`、`loans`、`requests` 及 `fines` 只供查閱。本工具不續借、預約、取消、繳款或提交場地預約。
+
 活動報名及選科會改動校方紀錄，只供帳戶持有人在互動式本機 Terminal 使用，並必須明確加入 `--confirm`：
 
 ```bash
@@ -92,7 +145,7 @@ vtc myportal select --code MODULE_CODE --confirm
 
 ## Agent 使用邊界
 
-在帳戶持有人完成登入，或明確授權私人帳密檔登入後，agent 可執行只讀的 Moodle／MyPortal 指令及獲授權的本機下載、擷取工作。Agent 不可執行 `myportal apply` 或 `myportal select`，亦不可提交表單、改動校方紀錄或公開敏感資料。
+在帳戶持有人完成登入，或明確授權私人帳密檔登入後，agent 可執行只讀的 Moodle／MyPortal／Library 指令及獲授權的本機下載、擷取工作。Agent 不可執行 `myportal apply`、`myportal select`，亦不可續借、預約、取消、繳款、提交表單或改動校方紀錄。
 
 `unverified` 表示工具未能可靠讀取或確認資料，不代表「沒有功課」、「沒有課堂」、「沒有選科」或「沒有文件」。自動化程式應同時檢查 JSON 的 `ok`、`status`、`source` 及程序 exit code。
 
@@ -107,7 +160,7 @@ vtc myportal select --code MODULE_CODE --confirm
 ## 私密資料
 
 - Session 預設保存在 `~/.local/share/vtc/`，檔案權限為 `0600`。
-- `*.storage.json`、帳密 Markdown、密碼、TOTP、cookie、token 及下載表單 hidden fields 都屬敏感資料。
+- `*.storage.json`、帳密 Markdown、密碼、TOTP、cookie、token、Library JWT、sessionStorage、SAML 資料及下載表單 hidden fields 都屬敏感資料。
 - 不要提交上述資料到 Git；`.gitignore` 只涵蓋常見檔名，私人檔仍應放在專案外。
 - 不要在不同電腦、agent VM 或不同使用者之間複製 session 檔。每部電腦都應由同一帳戶持有人在該機器登入。
 - `--json` 會過濾已知敏感欄位，但不應視為保存或分享完整輸出的授權。

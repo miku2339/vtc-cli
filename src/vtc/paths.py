@@ -35,6 +35,15 @@ def myportal_session_path() -> Path:
     return data_dir() / "myportal.storage.json"
 
 
+def library_session_path(service: str = "catalogue") -> Path:
+    from vtc.errors import UsageError
+    from vtc.library.constants import SERVICES
+
+    if service not in SERVICES:
+        raise UsageError("Unknown Library service.")
+    return data_dir() / f"library-{service}.storage.json"
+
+
 def rest_status_path(site_key: str) -> Path:
     return data_dir() / f"moodle-{site_key}.rest-status.json"
 

@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="vtc",
-        description="Read-only VTC Moodle and MyPortal CLI with local session login.",
+        description="Read-only VTC Moodle, MyPortal and Library CLI with local session login.",
     )
     parser.add_argument("--version", action="version", version=f"vtc {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -97,6 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Save the password to macOS Keychain after it is read.",
     )
     myportal_login.set_defaults(handler=cmd_login_myportal, command_name="login.myportal")
+
+    library_login = login_sub.add_parser("library", help="Sign in to a VTC Library service via CNA SSO.")
+    library_login.add_argument("--service", choices=("catalogue", "papers", "syllabuses"), default="catalogue")
+    library_login.add_argument("--credentials-file", type=Path)
+    library_login.add_argument("--headed", action="store_true")
+    library_login.add_argument("--json", action="store_true")
+    library_login.set_defaults(handler=cmd_login_library, command_name="login.library")
 
     moodle = sub.add_parser("moodle", help="Read Moodle with a stored session.")
     moodle_sub = moodle.add_subparsers(dest="moodle_cmd", required=True)
@@ -175,7 +182,86 @@ def build_parser() -> argparse.ArgumentParser:
     tuition.add_argument("--output", type=Path, help="Download matching PDFs into this directory.")
     tuition.add_argument("--json", action="store_true")
     tuition.set_defaults(handler=cmd_myportal_tuition, command_name="myportal.tuition")
+
+    library = sub.add_parser("library", help="Read library catalogues, course materials, account and public resources.")
+    library_sub = library.add_subparsers(dest="library_cmd", required=True)
+
+    for name in ("search", "journals"):
+        command = library_sub.add_parser(name, help="Search the catalogue." if name == "search" else "Search e-journals.")
+        command.add_argument("--query", required=True)
+        command.add_argument("--offset", type=int, default=0)
+        command.add_argument("--limit", type=int, default=20)
+        if name == "search":
+            command.add_argument("--scope", choices=("all", "catalogue", "books", "articles", "media", "videos"), default="all")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(handler=cmd_library_catalogue, command_name=f"library.{name}")
+
+    record = library_sub.add_parser("record", help="Read a catalogue record and availability.")
+    record.add_argument("--id", required=True)
+    record.add_argument("--json", action="store_true")
+    record.set_defaults(handler=cmd_library_catalogue, command_name="library.record")
+
+    for name in ("status", "account", "loans", "requests", "fines"):
+        command = library_sub.add_parser(name, help="Read the local Library account session.")
+        if name == "status":
+            command.add_argument("--service", choices=("catalogue", "papers", "syllabuses"), default="catalogue")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(handler=cmd_library_account, command_name=f"library.{name}")
+
+    links = library_sub.add_parser("links", help="List the official Library website directory.")
+    links.add_argument("--json", action="store_true")
+    links.set_defaults(handler=cmd_library_public, command_name="library.links")
+
+    resources = library_sub.add_parser("resources", help="List or search databases, e-books, videos and subject guides.")
+    resources.add_argument("--category", choices=("all", "databases", "ebooks", "ejournals", "videos", "repositories", "guides"), default="all")
+    resources.add_argument("--query", default="")
+    resources.add_argument("--json", action="store_true")
+    resources.set_defaults(handler=cmd_library_public, command_name="library.resources")
+
+    for name in ("hours", "locations", "news", "services", "regulations", "membership", "remote-access", "room-booking", "laptop-loans", "forms", "staff", "alumni"):
+        command = library_sub.add_parser(name, help="Read official Library information.")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(handler=cmd_library_public, command_name=f"library.{name}")
+
+    for name in ("papers", "syllabuses"):
+        command = library_sub.add_parser(name, help="Search examination papers." if name == "papers" else "Search course syllabuses.")
+        command.add_argument("--query", default="")
+        command.add_argument("--page", type=int, default=1)
+        command.add_argument("--per-page", type=int, choices=(10, 20, 50, 100), default=10)
+        _add_library_filters(command, paper_fields=name == "papers")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(handler=cmd_library_documents, command_name=f"library.{name}")
+
+    filters = library_sub.add_parser("filters", help="List available examination paper or syllabus search filters.")
+    filters.add_argument("--service", choices=("papers", "syllabuses"), required=True)
+    _add_library_filters(filters)
+    filters.add_argument("--json", action="store_true")
+    filters.set_defaults(handler=cmd_library_documents, command_name="library.filters")
+
+    download = library_sub.add_parser("download", help="Download one examination paper or syllabus.")
+    download.add_argument("--service", choices=("papers", "syllabuses"), required=True)
+    download.add_argument("--id", required=True)
+    download.add_argument("--output", type=Path, required=True)
+    download.add_argument("--query", default="", help="Repeat the search used to find the document.")
+    download.add_argument("--json", action="store_true")
+    download.set_defaults(handler=cmd_library_documents, command_name="library.download")
+
+    library_extract = library_sub.add_parser("extract", help="Read text from a downloaded PDF, Word or PowerPoint file.")
+    library_extract.add_argument("--path", type=Path, required=True)
+    library_extract.add_argument("--json", action="store_true")
+    library_extract.set_defaults(handler=cmd_library_extract, command_name="library.extract")
     return parser
+
+
+def _add_library_filters(parser: argparse.ArgumentParser, *, paper_fields: bool = True) -> None:
+    fields = [("discipline", "discipline_uuid"), ("department", "department_uuid"), ("course", "course_code"), ("year", "year")]
+    if paper_fields:
+        fields.extend((("session", "session"), ("level", "class")))
+    for flag, field in fields:
+        help_text = "Filter value from `vtc library filters`."
+        if flag in {"session", "level"}:
+            help_text += " Examination papers only."
+        parser.add_argument(f"--{flag}", dest=f"filter_{field}", help=help_text)
 
 
 def _add_site(parser: argparse.ArgumentParser) -> None:
@@ -217,6 +303,17 @@ def redact_public_payload(payload: Any) -> Any:
         "access_token",
         "refresh_token",
         "id_token",
+        "primoexplorejwt",
+        "jwt",
+        "authstate",
+        "samlrequest",
+        "samlresponse",
+        "relaystate",
+        "csrf_token",
+        "xsrf-token",
+        "patron_id",
+        "patronid",
+        "useridentifier",
     }
     blocked.update(name.lower() for name in SECRET_ENV_NAMES)
     if isinstance(payload, dict):
@@ -305,6 +402,117 @@ def _print_human(payload: dict[str, Any]) -> None:
             print(payload["excerpt"])
         elif payload.get("error"):
             print(payload["error"])
+    if str(payload.get("command", "")).startswith(("library.", "login.library")):
+        if "authenticated" in payload:
+            print(f"service={payload.get('service') or 'catalogue'} authenticated={payload.get('authenticated')}")
+        for key in ("items", "documents", "resources", "links"):
+            rows = payload.get(key)
+            if not isinstance(rows, list):
+                continue
+            print(f"{key}: {len(rows)} total={payload.get('total', payload.get('result_count', '-'))}")
+            for row in rows:
+                title = row.get("title") or row.get("subject_title") or row.get("course_title") or row.get("type") or "-"
+                year = row.get("academic_year") or row.get("issuing_year") or ""
+                print(f"  {row.get('record_id') or row.get('id') or '-'}  {title}  {year}  {row.get('path') or row.get('url') or ''}")
+            break
+        if payload.get("command") == "library.download" and payload.get("path"):
+            print(f"{payload['path']} ({payload.get('bytes', 0)} bytes)")
+        if payload.get("command") == "library.extract" and payload.get("excerpt"):
+            print(payload["excerpt"])
+        elif payload.get("text"):
+            print(payload["text"])
+        if payload.get("filters"):
+            print(json.dumps(payload["filters"], ensure_ascii=False, indent=2))
+
+
+def _library_payload(command: str, result: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    payload = dict(result)
+    verified = bool(payload.pop("verified", False))
+    source = payload.pop("source", "unverified")
+    data = payload.pop("data", {})
+    if isinstance(data, dict):
+        payload.update(data)
+    payload.update(extra)
+    return envelope(command=command, site=None, source=source if verified else "unverified", ok=verified, status="ok" if verified else "unverified", **payload)
+
+
+def cmd_login_library(args: argparse.Namespace) -> dict[str, Any]:
+    from vtc.library.login import login_library
+
+    result = login_library(service=args.service, credentials_file=args.credentials_file, headed=args.headed)
+    return envelope(command="login.library", site=None, source="library_html", ok=result.authenticated, status="authenticated" if result.authenticated else "auth_failed", authenticated=result.authenticated, service=result.service, session=result.session, details=result.details)
+
+
+def cmd_library_catalogue(args: argparse.Namespace) -> dict[str, Any]:
+    from vtc.errors import UsageError
+    from vtc.library.catalogue import LibraryCatalogueClient
+
+    if args.library_cmd != "record" and (not args.query.strip() or args.offset < 0 or not 1 <= args.limit <= 100):
+        raise UsageError("Library search requires a query, non-negative offset and limit between 1 and 100.")
+    with LibraryCatalogueClient() as client:
+        if args.library_cmd == "record":
+            result = client.record(args.id)
+        elif args.library_cmd == "journals":
+            result = client.journals(args.query, offset=args.offset, limit=args.limit)
+        else:
+            result = client.search(args.query, scope=args.scope, offset=args.offset, limit=args.limit)
+        return _library_payload(args.command_name, result)
+
+
+def cmd_library_account(args: argparse.Namespace) -> dict[str, Any]:
+    if args.library_cmd == "status" and args.service != "catalogue":
+        from vtc.library.documents import LibraryDocumentsClient
+
+        with LibraryDocumentsClient(args.service) as client:
+            return _library_payload(args.command_name, client.status(), service=args.service)
+    from vtc.library.catalogue import LibraryCatalogueClient
+
+    kind = "overview" if args.library_cmd in {"status", "account"} else args.library_cmd
+    with LibraryCatalogueClient() as client:
+        result = client.account(kind)
+        return _library_payload(args.command_name, result, service="catalogue", authenticated=bool(result.get("verified")))
+
+
+def cmd_library_public(args: argparse.Namespace) -> dict[str, Any]:
+    from vtc.library.public import LibraryPublicClient
+
+    with LibraryPublicClient() as client:
+        if args.library_cmd == "links":
+            result = client.links()
+        elif args.library_cmd == "resources":
+            result = client.resources(args.category, query=args.query)
+        else:
+            result = client.info(args.library_cmd)
+        return _library_payload(args.command_name, result)
+
+
+def cmd_library_documents(args: argparse.Namespace) -> dict[str, Any]:
+    from vtc.errors import UsageError
+    from vtc.library.documents import LibraryDocumentsClient
+
+    service = args.library_cmd if args.library_cmd in {"papers", "syllabuses"} else args.service
+    if service == "syllabuses" and any(getattr(args, f"filter_{field}", None) is not None for field in ("session", "class")):
+        raise UsageError("Session and level filters apply to examination papers only.")
+    with LibraryDocumentsClient(service) as client:
+        if args.library_cmd == "filters":
+            selected = {field: getattr(args, f"filter_{field}", None) for field in ("discipline_uuid", "department_uuid", "course_code", "year", "session", "class")}
+            result = client.filters(filters={field: value for field, value in selected.items() if value is not None})
+        elif args.library_cmd == "download":
+            result = client.download(args.id, args.output, query=args.query)
+        else:
+            if args.page < 1:
+                raise UsageError("Library page must be at least 1.")
+            selected = {field: getattr(args, f"filter_{field}", None) for field in ("discipline_uuid", "department_uuid", "course_code", "year", "session", "class")}
+            result = client.search(args.query, page=args.page, per_page=args.per_page, filters={field: value for field, value in selected.items() if value is not None})
+        return _library_payload(args.command_name, result, service=service)
+
+
+def cmd_library_extract(args: argparse.Namespace) -> dict[str, Any]:
+    from vtc.moodle.extract import extract_file
+
+    extracted = extract_file(args.path)
+    ok = extracted.status == "ok"
+    return envelope(command="library.extract", site=None, source="library_html" if ok else "unverified", ok=ok, status=extracted.status, path=str(args.path), extractor=extracted.extractor, extract_status=extracted.status, excerpt=extracted.excerpt, key_lines=extracted.key_lines, text=extracted.text, error=extracted.error)
 
 
 def cmd_login_moodle(args: argparse.Namespace) -> dict[str, Any]:
