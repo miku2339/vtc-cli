@@ -26,6 +26,25 @@ python -m playwright install chromium
 
 之後可使用 `vtc`。每次開新 Terminal 都要先 `cd` 到專案並啟用 `.venv`；或直接使用 `.venv/bin/vtc`。
 
+## 更新至最新版
+
+如已按上節以 Git clone 安裝，請回到原本的專案目錄更新。以下 `~/vtc-cli` 請換成你實際的安裝路徑：
+
+```bash
+cd ~/vtc-cli
+git switch main
+git pull --ff-only origin main
+source .venv/bin/activate
+python -m pip install -e .
+python -m playwright install chromium
+vtc --help
+git log -1 --oneline
+```
+
+`pip install -e .` 會更新 CLI 安裝資訊及所需依賴，Chromium 指令會安裝目前 Playwright 對應的瀏覽器。`vtc --help` 可確認 CLI 能正常啟動；最後一行顯示本機最新 commit。
+
+若切換分支或 `git pull --ff-only` 被拒絕，先用 `git status` 檢查並保存自己的修改，再處理更新。登入 session 保存在專案外，更新後通常可繼續使用；若 session 已過期，按下節重新登入。
+
 ## 登入
 
 Moodle 的所有指令都必須指定學年：`--site ay2526` 或 `--site ay2627`。MyPortal 與 Library 沒有 `--site`。
